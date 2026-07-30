@@ -41,7 +41,7 @@ EXAMPLES = {
     "Kruger 60 (DO Cep)": {
         "file": "kr60.csv", "target": "Kruger 60 (DO Cep)",
         "spectral": "M3V + M4V",
-        "m1": 0.36, "m2": 0.24,
+        "m1": 0.30, "m2": 0.20,
         "P_lower": 0.1, "P_upper": 120.0,
     },
     "70 Ophiuchi": {

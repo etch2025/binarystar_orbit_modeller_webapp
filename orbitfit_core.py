@@ -265,13 +265,11 @@ def plot_orbits(row, t_obs, x_obs, y_obs, d_pc, parallax_mas, target,
 
     fig.suptitle(
         f'{target}\n'
-        f'Obs Arc: {t_obs[0]:.0f} - {t_obs[-1]:.0f} | '
-        f'Orbit Fits = {n_P_grid}, Iterations = {n_restarts_per_P}\n'
-        f'R² = {r_squared:.6f}, Cost = {cost:.3e}, '
-        f'Mass Constrain = {mass_constrain}\n\n'
-        f'Parallax = {parallax_mas:.4f} mas, Distance = {d_pc:.2f} pc, '
-        f'$M_{{total}}$ = {M_total:.3f} M$_\\odot$\n'
-        f'P = {P:.3f} yr, T = {T_disp:.3f} yr', fontsize=10)
+        f'Obs Arc: {t_obs[0]:.0f} - {t_obs[-1]:.0f} | Orbit Fits = {n_P_grid}, Iterations = {n_restarts_per_P}\n'
+        f'R² = {r_squared}, Cost = {cost}, Mass Constrain = {mass_constrain}\n\n'
+        f'Parallax = {parallax_mas:.4f} mas, Distance = {d_pc:.2f} pc, $M_{{total}}$ = {M_total:.3f} M$_\\odot$\n'
+        f'P = {P:.3f} yr, T = {T_disp:.3f} yr'
+        , fontsize=10)
 
     ax1.set_title(
         f'Sky-Projected Orbit Fit\n'
@@ -289,8 +287,24 @@ def plot_orbits(row, t_obs, x_obs, y_obs, d_pc, parallax_mas, target,
     return fig
 
 
+def _cost_title(target, t_obs, fit_mode, n_fitted, n_restarts_per_P,
+                mass_constrain, n_accept, accept_factor, best_cost,
+                P_lower, P_upper, m_total_frac_accept, m_total_guess):
+    """Reproduce the exact multi-line cost-plot title from orbit3.py."""
+    if mass_constrain == False:
+        return (f'{target} | {t_obs[0]} - {t_obs[-1]}\n'
+                f'mode = {fit_mode} | {n_fitted} Orbit Fits, {n_restarts_per_P} Iterations, Mass Constrain = {mass_constrain}\n'
+                f'{n_accept}/{n_fitted} Accepted, Cost $\\leq$ {accept_factor * best_cost}\n'
+                f'{P_lower} $\\leq$ P $\\leq$ {P_upper}')
+    else:
+        return (f'{target} | {t_obs[0]} - {t_obs[-1]}\n'
+                f'mode = {fit_mode} | {n_fitted} Orbit Fits, {n_restarts_per_P} Iterations, Mass Constrain = {mass_constrain}\n'
+                f'{n_accept}/{n_fitted} Accepted, Cost $\\leq$ {accept_factor * best_cost}\n'
+                f'{P_lower} $\\leq$ P $\\leq$ {P_upper}, {(1-m_total_frac_accept) *  m_total_guess:.3f} M$_\\odot$ $\\leq$ $M_{{total}}$ $\\leq$ {(1+m_total_frac_accept) *  m_total_guess:.3f} M$_\\odot$')
+
+
 def _cost_scatter(x_all, x_acc, costs, acc_costs, best_x, thresh,
-                  xlabel, best_label, title, P_grid_log):
+                  xlabel, best_label, title, accept_factor, P_grid_log):
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.set_xlabel(xlabel)
     ax.set_ylabel("Cost")
@@ -299,7 +313,8 @@ def _cost_scatter(x_all, x_acc, costs, acc_costs, best_x, thresh,
                label="Modeled Orbits")
     ax.scatter(x_acc, acc_costs, c="tab:red", s=30, alpha=0.7, marker="x",
                label="Accepted Orbits")
-    ax.axhline(thresh, color="tab:red", ls="--", lw=1, label="Accept threshold")
+    ax.axhline(thresh, color="tab:red", ls="--", lw=1,
+               label=f"Accept = {accept_factor}x Best Cost")
     ax.axvline(best_x, color="tab:green", ls=":", lw=1, label=best_label)
     ax.set_yscale("log")
     if P_grid_log:
@@ -386,24 +401,26 @@ def run_fit(source, *, target="Target", m1_guess=None, m2_guess=None,
             log.append(f"  {lab:14s} range [{col.min():10.3f}, "
                        f"{col.max():10.3f}]  median {np.median(col):10.3f}")
 
-    # Figures
+    # Figures  (titles/labels reproduced EXACTLY from orbit3.py)
     thresh = accept_factor * best_cost
-    src = accept if len(accept) else fitted_values
-    ttl = (f"{target} | {t_obs[0]:.0f}-{t_obs[-1]:.0f}\n"
-           f"{len(accept)}/{len(fitted_values)} accepted, "
-           f"cost ≤ {thresh:.3e}")
+    ttl = _cost_title(target, t_obs, "grid", len(fitted_values),
+                      n_restarts_per_P, mass_constrain, len(accept),
+                      accept_factor, best_cost, P_lower, P_upper,
+                      m_total_frac_accept, m_total_guess)
 
     period_fig = _cost_scatter(
-        fitted_values[:, 0], src[:, 0] if len(src) else [],
-        fitted_values[:, 8], src[:, 8] if len(src) else [],
+        fitted_values[:, 0], accept[:, 0],
+        fitted_values[:, 8], accept[:, 8],
         best_accept_fit[0], thresh, "Orbital Period (yr)",
-        f"Best P = {best_accept_fit[0]:.1f} yr", ttl, P_grid_log)
+        f"Best Period = {best_accept_fit[0]} yr", ttl,
+        accept_factor, P_grid_log)
 
     eccent_fig = _cost_scatter(
-        fitted_values[:, 2], src[:, 2] if len(src) else [],
-        fitted_values[:, 8], src[:, 8] if len(src) else [],
+        fitted_values[:, 2], accept[:, 2],
+        fitted_values[:, 8], accept[:, 8],
         best_accept_fit[2], thresh, "Eccentricity",
-        f"Best e = {best_accept_fit[2]:.3f}", ttl, False)
+        f"Best Eccentricity = {best_accept_fit[2]}", ttl,
+        accept_factor, P_grid_log)
 
     orbit_fig = plot_orbits(best_accept_fit, t_obs, x_obs, y_obs, d_pc,
                             parallax_mas, target, n_P_grid, n_restarts_per_P,

@@ -292,43 +292,51 @@ elif uploaded is not None:
     source_label = uploaded.name
 
 if raw is None:
-    st.info("Choose an example dataset in the sidebar, or upload your own "
-            "astrometry CSV.")
-    st.subheader("Example datasets included")
-    st.dataframe(
-        pd.DataFrame([
-            {"System": k, "Components": v["spectral"], "File": v["file"],
-             "m1 (Msun)": v["m1"], "m2 (Msun)": v["m2"],
-             "Period search (yr)": f"{v['P_lower']:g} - {v['P_upper']:g}"}
-            for k, v in EXAMPLES.items()
-        ]).set_index("System"),
-        use_container_width=True,
-    )
-    st.subheader("Expected CSV format")
-    st.code("THETA,RHO,YEAR,PARALLAX\n"
-            "149.8,30.629,2000,285.9949\n"
-            "149.9,30.692,2001\n"
-            "150.1,30.756,2002", language="text")
-    st.stop()
+    # No data selected right now. But if a previous fit is still in memory,
+    # fall through and keep showing it instead of wiping the screen — only
+    # show the welcome/help panel when there is genuinely nothing to display.
+    if st.session_state.get("result") is None:
+        st.info("Choose an example dataset in the sidebar, or upload your own "
+                "astrometry CSV.")
+        st.subheader("Example datasets included")
+        st.dataframe(
+            pd.DataFrame([
+                {"System": k, "Components": v["spectral"], "File": v["file"],
+                 "m1 (Msun)": v["m1"], "m2 (Msun)": v["m2"],
+                 "Period search (yr)": f"{v['P_lower']:g} - {v['P_upper']:g}"}
+                for k, v in EXAMPLES.items()
+            ]).set_index("System"),
+            use_container_width=True,
+        )
+        st.subheader("Expected CSV format")
+        st.code("THETA,RHO,YEAR,PARALLAX\n"
+                "149.8,30.629,2000,285.9949\n"
+                "149.9,30.692,2001\n"
+                "150.1,30.756,2002", language="text")
+        st.stop()
 
 # ----------------------------------------------------------------------
 # Main panel
 # ----------------------------------------------------------------------
-st.subheader(f"Data: {source_label}")
-if choice in EXAMPLES:
-    st.caption("Recommended fit settings for this system have been applied. "
-               "Adjust anything in the sidebar and re-run.")
-try:
-    st.dataframe(pd.read_csv(io.BytesIO(raw)), height=210,
-                 use_container_width=True)
-except Exception:
-    st.warning("Could not preview the CSV, but the fitter will still try "
-               "to read it.")
+if raw is not None:
+    st.subheader(f"Data: {source_label}")
+    if choice in EXAMPLES:
+        st.caption("Recommended fit settings for this system have been "
+                   "applied. Adjust anything in the sidebar and re-run.")
+    try:
+        st.dataframe(pd.read_csv(io.BytesIO(raw)), height=210,
+                     use_container_width=True)
+    except Exception:
+        st.warning("Could not preview the CSV, but the fitter will still try "
+                   "to read it.")
+else:
+    st.info("No dataset is currently selected — showing the most recent fit "
+            "below. Pick a dataset or upload a CSV to run a new one.")
 
 def _settings_signature():
     """Identity of the model the current sidebar settings would produce."""
     return (
-        hashlib.md5(raw).hexdigest(),
+        hashlib.md5(raw).hexdigest() if raw is not None else None,
         st.session_state["data_choice"], st.session_state["target"],
         st.session_state["P_lower"], st.session_state["P_upper"],
         int(st.session_state["n_P_grid"]),
@@ -339,6 +347,10 @@ def _settings_signature():
         st.session_state["use_seed"], int(st.session_state["seed"]),
     )
 
+
+if run and raw is None:
+    st.warning("Select a dataset or upload a CSV before fitting.")
+    run = False
 
 if run:
     # Clicking "Fit orbit" resets everything and recomputes from scratch.

@@ -4,6 +4,7 @@ Streamlit front-end for the visual-binary orbit fitter.
 Run locally with:   streamlit run app.py
 """
 import io
+from urllib.parse import quote_plus
 import os
 
 import pandas as pd
@@ -84,8 +85,94 @@ DEFAULTS = {
     "seed": 42,
     "data_choice": "61 Cygni (HD 201091)",
 }
-for _k, _v in DEFAULTS.items():
-    st.session_state.setdefault(_k, _v)
+
+
+# ----------------------------------------------------------------------
+# Shareable URLs
+#
+# Every setting that defines a model is mirrored into the browser query
+# string, so a URL fully reproduces an orbit model. Because the fit is
+# deterministic for a fixed seed, opening a shared link and pressing
+# "Fit orbit" reproduces the identical model.
+#
+# Caveat: an *uploaded* CSV cannot be embedded in a URL. Links are fully
+# self-contained only for the bundled example datasets; for uploads the
+# settings travel but the recipient must supply the same file.
+# ----------------------------------------------------------------------
+def _as_bool(v):
+    return str(v).strip().lower() in ("1", "true", "yes", "on")
+
+
+# param name -> (coercion function, short URL key)
+PARAM_SPEC = {
+    "data_choice":         (str, "d"),
+    "target":              (str, "name"),
+    "P_lower":             (float, "p0"),
+    "P_upper":             (float, "p1"),
+    "n_P_grid":            (int, "grid"),
+    "n_restarts_per_P":    (int, "rs"),
+    "P_grid_log":          (_as_bool, "plog"),
+    "accept_factor":       (float, "af"),
+    "use_mass":            (_as_bool, "mc"),
+    "m1":                  (float, "m1"),
+    "m2":                  (float, "m2"),
+    "m_total_frac_accept": (float, "mtol"),
+    "use_seed":            (_as_bool, "useseed"),
+    "seed":                (int, "seed"),
+}
+
+
+def _hydrate_from_url():
+    """
+    Merge query-string values over DEFAULTS, then seed session_state.
+
+    Runs before any widget is instantiated. Uses setdefault, so on later
+    reruns (when session_state already holds the user's edits) the URL is
+    ignored and cannot clobber in-progress changes.
+    """
+    qp = st.query_params
+    effective = dict(DEFAULTS)
+    for name, (cast, key) in PARAM_SPEC.items():
+        if key in qp:
+            try:
+                effective[name] = cast(qp[key])
+            except (TypeError, ValueError):
+                pass  # ignore malformed params rather than crashing
+    # Guard against a stale/unknown dataset name in a shared link.
+    if effective["data_choice"] not in EXAMPLES and \
+            effective["data_choice"] != UPLOAD_CHOICE:
+        effective["data_choice"] = UPLOAD_CHOICE
+    for k, v in effective.items():
+        st.session_state.setdefault(k, v)
+
+
+def _write_url():
+    """Mirror the current settings into the browser query string."""
+    st.query_params.clear()
+    for name, (_cast, key) in PARAM_SPEC.items():
+        v = st.session_state.get(name, DEFAULTS.get(name))
+        if isinstance(v, bool):
+            v = int(v)
+        st.query_params[key] = str(v)
+
+
+def _share_url():
+    """Best-effort absolute URL for the current model."""
+    qs = "&".join(f"{k}={quote_plus(v)}" for k, v in st.query_params.to_dict().items())
+    try:
+        h = st.context.headers or {}
+        host = h.get("Host") or h.get("host")
+        proto = (h.get("X-Forwarded-Proto") or h.get("x-forwarded-proto")
+                 or ("http" if host and host.split(":")[0]
+                     in ("localhost", "127.0.0.1") else "https"))
+        if host:
+            return f"{proto}://{host}/?{qs}"
+    except Exception:
+        pass
+    return f"?{qs}"
+
+
+_hydrate_from_url()
 st.session_state.setdefault("_preset_applied_for_upload", None)
 
 
@@ -238,6 +325,9 @@ except Exception:
                "to read it.")
 
 if run:
+    # Mirror the exact settings of this model into the URL before fitting,
+    # so the address bar is a permalink to what is being computed.
+    _write_url()
     bar = st.progress(0.0, text="Fitting orbits...")
     try:
         result = run_fit(
@@ -295,6 +385,20 @@ if run:
             ).set_index("Element"),
             use_container_width=True,
         )
+
+    st.subheader("Share this model")
+    if not st.session_state["use_seed"]:
+        st.warning("The random seed is not fixed, so this link reproduces the "
+                   "settings but not necessarily the identical fit. Enable "
+                   "'Fix random seed' for a reproducible permalink.")
+    if choice == UPLOAD_CHOICE:
+        st.info("This link carries the fit settings, but an uploaded CSV "
+                "cannot be embedded in a URL — the recipient will need to "
+                "upload the same file. Links to the bundled example datasets "
+                "are fully self-contained.")
+    st.caption("The address bar is already updated. Copy the link below to "
+               "share or bookmark this exact model.")
+    st.code(_share_url(), language=None)
 
     st.subheader("Downloads")
     tag = st.session_state["target"].replace(" ", "_")

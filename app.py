@@ -109,8 +109,8 @@ def _on_data_choice_change():
         st.session_state["_preset_applied_for_upload"] = None
 
 
-st.set_page_config(page_title="Visual Binary Orbit Fitter", layout="wide")
-st.title("Visual Binary Orbit Fitter")
+st.set_page_config(page_title="Binary Star Orbit Modeller", layout="wide")
+st.title("Binary Star Orbit Modeller")
 st.caption("Fit the seven Campbell orbital elements to relative astrometry "
            "via the Thiele-Innes method.")
 

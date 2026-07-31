@@ -239,9 +239,9 @@ with st.sidebar:
                     min_value=0.001, step=0.1, format="%.3f")
     st.number_input("P upper (yr)", key="P_upper",
                     min_value=1.0, step=10.0, format="%.3f")
-    st.slider("Grid points", 10, 500, key="n_P_grid",
+    st.slider("Grid points", 10, 1000, key="n_P_grid",
               help="Number of trial periods. More = finer map, slower.")
-    st.slider("Restarts per period", 1, 30, key="n_restarts_per_P",
+    st.slider("Restarts per period", 1, 50, key="n_restarts_per_P",
               help="Random restarts of the 6 free elements at each P.")
     st.checkbox("Log-spaced period grid", key="P_grid_log")
 

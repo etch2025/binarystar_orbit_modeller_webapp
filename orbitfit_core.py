@@ -14,6 +14,7 @@ Column layout of every fitted row / the fitted_values array:
 
 from dataclasses import dataclass, field
 import io
+import time
 
 import numpy as np
 import matplotlib
@@ -41,6 +42,11 @@ class FitResult:
     parallax_mas: float
     n_accept: int
     n_total: int
+    orbit_filename: str                  # matches orbit3.py's saved filenames
+    period_filename: str
+    sma_filename: str
+    eccent_filename: str
+    log_filename: str
 
 
 # ======================================================================
@@ -339,6 +345,7 @@ def run_fit(source, *, target="Target", m1_guess=None, m2_guess=None,
     Angles/masses follow the column layout documented at module top.
     """
     theta, rho, t_obs, x_obs, y_obs, parallax_mas = load_astrometry(source)
+    start_time = time.perf_counter()
     d_pc = 1.0 / (parallax_mas / 1000.0)
     ss_tot = np.sum((x_obs - x_obs.mean())**2) + np.sum((y_obs - y_obs.mean())**2)
 
@@ -353,19 +360,28 @@ def run_fit(source, *, target="Target", m1_guess=None, m2_guess=None,
     else:
         P_values = np.linspace(P_lower, P_upper, n_P_grid)
 
-    log = []
-    log.append(f"Grid mode: {n_P_grid} periods in [{P_lower}, {P_upper}] yr, "
-               f"{n_restarts_per_P} restarts each, "
-               f"Mass Constrain = {mass_constrain}")
-    log.append(f"Accept factor = {accept_factor}, "
-               f"Mass fractional acceptance = {m_total_frac_accept}, seed = {seed}")
+    # Log header — wording reproduced EXACTLY from orbit3.py's opening
+    # write() call (three lines split on the embedded \n's).
+    log = [
+        f"Grid mode: {n_P_grid} periods in [{P_lower}, {P_upper}] yr, "
+        f"{n_restarts_per_P} Iterations each, Mass Constrain = {mass_constrain}",
+        f"Total Mass Fractional Acceptance = {m_total_frac_accept}, "
+        f"Best Cost Accept Factor = {accept_factor}",
+        f"Primary Star (m1) Mass Guess: {m1_guess} MSol, "
+        f"Secondary Star (m2) Mass Guess: {m2_guess} MSol",
+    ]
 
     fitted_values = []
     for gi, P_fixed in enumerate(P_values):
         sol = fit_six_at_fixed_P(P_fixed, n_restarts_per_P, rng,
                                  t_obs, x_obs, y_obs, lower, upper)
         if sol is not None:
-            fitted_values.append(record(sol, t_obs, x_obs, y_obs, d_pc, ss_tot))
+            row = record(sol, t_obs, x_obs, y_obs, d_pc, ss_tot)
+            fitted_values.append(row)
+            # Per-grid-point line — exact match to orbit3.py's logfile write.
+            log.append(f"  [{gi+1}/{n_P_grid}] P = {P_fixed:8.2f} yr, "
+                       f"a = {row[3]:.3f}\"  e = {row[2]:.3f}, "
+                       f"M = {row[7]:.3f} Msun  cost = {row[8]}")
         if progress is not None:
             progress((gi + 1) / len(P_values))
 
@@ -382,25 +398,55 @@ def run_fit(source, *, target="Target", m1_guess=None, m2_guess=None,
         accept = accept[accept[:, 7] <= (1 + m_total_frac_accept) * m_total_guess]
         accept = accept[accept[:, 7] >= (1 - m_total_frac_accept) * m_total_guess]
 
+    # Filenames — reproduced EXACTLY from orbit3.py's naming scheme.
+    period_filename = (f"fitted_periods_cost_{target}_{n_P_grid}_"
+                       f"{n_restarts_per_P}_{mass_constrain}.png")
+    sma_filename = (f"fitted_sma_cost_{target}_{n_P_grid}_"
+                    f"{n_restarts_per_P}_{mass_constrain}.png")
+    eccent_filename = (f"fitted_eccents_cost_{target}_{n_P_grid}_"
+                       f"{n_restarts_per_P}_{mass_constrain}.png")
+    log_filename = (f"logfile_{target}_{n_P_grid}_{n_restarts_per_P}_"
+                    f"{mass_constrain}.txt")
+    folder_name = f"{target}_{t_obs[0]}_{t_obs[-1]}_{n_P_grid}_{n_restarts_per_P}_{mass_constrain}"
+
     if len(accept) == 0:
         log.append("No orbits pass the cost + mass constraints. "
-                   "Widen accept_factor or m_total_frac_accept. "
-                   "Falling back to lowest-cost orbit.")
+                   "Widen accept_factor or m_total_frac_accept.")
         best_accept_fit = best_fit
+        orbit_filename = "orbit_fit_lowest_cost.png"
+        log.append(f"Plot saved to {orbit_filename}")
     else:
         best_accept_fit = accept[int(np.argmin(accept[:, 8]))]
+        orbit_filename = (f"orbit_fit_best_{target}_{n_P_grid}_"
+                          f"{n_restarts_per_P}_{mass_constrain}.png")
+
+    # "ACCEPTABLE ORBITS" line — always written, wording depends on
+    # mass_constrain, exactly as in orbit3.py.
+    if mass_constrain:
+        log.append(
+            f"ACCEPTABLE ORBITS  (cost <= {accept_factor * best_cost}), "
+            f"({(1 - m_total_frac_accept) * m_total_guess} <= m_total <= "
+            f"{(1 + m_total_frac_accept) * m_total_guess}): "
+            f"{len(accept)} of {len(fitted_values)} orbits")
+    else:
+        log.append(
+            f"ACCEPTABLE ORBITS  (cost <= {accept_factor * best_cost}): "
+            f"{len(accept)} of {len(fitted_values)} orbits")
 
     # Range report
     labels = ['P (yr)', 'T (yr)', 'e', f'a ({unit})', 'i (deg)',
               'Omega (deg)', 'omega (deg)', 'M_tot (Msun)']
     ranges = {}
-    if len(accept) > 0:
-        log.append(f"ACCEPTABLE ORBITS: {len(accept)} of {len(fitted_values)}")
+    if len(accept) != 0:
         for c, lab in enumerate(labels):
             col = accept[:, c]
             ranges[lab] = (float(col.min()), float(col.max()), float(np.median(col)))
             log.append(f"  {lab:14s} range [{col.min():10.3f}, "
                        f"{col.max():10.3f}]  median {np.median(col):10.3f}")
+
+    log.append(f"Cost vs Period graph saved to {period_filename}")
+    log.append(f"Cost vs Semi-Major Axis graph saved to {sma_filename}")
+    log.append(f"Cost vs Eccentricity graph saved to {eccent_filename}")
 
     # Figures  (titles/labels reproduced EXACTLY from orbit3.py)
     thresh = accept_factor * best_cost
@@ -434,10 +480,22 @@ def run_fit(source, *, target="Target", m1_guess=None, m2_guess=None,
                             parallax_mas, target, n_P_grid, n_restarts_per_P,
                             mass_constrain, unit)
 
+    if len(accept) != 0:
+        log.append(f"Plot saved to {orbit_filename}")
+
+    log.append(f"All files saved to {folder_name}")
+
+    end_time = time.perf_counter()
+    total_time = end_time - start_time
+    minutes, seconds = divmod(total_time, 60)
+    log.append(f"Runtime: {minutes} min, {seconds:.2f} sec")
+
     return FitResult(
         fitted_values=fitted_values, accept=accept, best_fit=best_fit,
         best_accept_fit=best_accept_fit, orbit_fig=orbit_fig,
         period_fig=period_fig, sma_fig=sma_fig, eccent_fig=eccent_fig,
         log_text="\n".join(log), ranges=ranges, d_pc=d_pc,
         parallax_mas=parallax_mas, n_accept=len(accept),
-        n_total=len(fitted_values))
+        n_total=len(fitted_values), orbit_filename=orbit_filename,
+        period_filename=period_filename, sma_filename=sma_filename,
+        eccent_filename=eccent_filename, log_filename=log_filename)

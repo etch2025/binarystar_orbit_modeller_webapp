@@ -458,14 +458,15 @@ if result is not None:
     png = io.BytesIO()
     result.orbit_fig.savefig(png, format="png", dpi=200, bbox_inches="tight")
     d1.download_button("Best-fit orbit (PNG)", png.getvalue(),
-                       file_name=f"orbit_fit_{tag}.png", mime="image/png")
+                       file_name=result.orbit_filename, mime="image/png")
 
     # Bundle the three cost-diagnostic plots (period, semi-major axis,
-    # eccentricity) into a single zip for one-click download.
+    # eccentricity) into a single zip for one-click download. Filenames
+    # inside the zip match orbit3.py's naming scheme exactly.
     cost_plots = {
-        f"cost_vs_period_{tag}.png": result.period_fig,
-        f"cost_vs_sma_{tag}.png": result.sma_fig,
-        f"cost_vs_eccentricity_{tag}.png": result.eccent_fig,
+        result.period_filename: result.period_fig,
+        result.sma_filename: result.sma_fig,
+        result.eccent_filename: result.eccent_fig,
     }
     cost_zip = io.BytesIO()
     with zipfile.ZipFile(cost_zip, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -485,4 +486,4 @@ if result is not None:
                        file_name=f"all_fits_{tag}.csv", mime="text/csv")
 
     d4.download_button("Run log (TXT)", result.log_text,
-                       file_name=f"logfile_{tag}.txt", mime="text/plain")
+                       file_name=result.log_filename, mime="text/plain")

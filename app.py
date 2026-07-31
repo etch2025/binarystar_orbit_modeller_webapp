@@ -200,8 +200,8 @@ def _on_data_choice_change():
 
 st.set_page_config(page_title="Binary Star Orbit Modeller", layout="wide")
 st.title("Binary Star Orbit Modeller")
-st.caption("Fit the seven Campbell orbital elements to relative astrometry "
-           "via the Thiele-Innes method.")
+st.caption("Orbit Fitter for binary stars by iterating over the Thiele-Innes Method.")
+st.markdown("[Version of the Orbit Modeller than can be run locally and much faster](https://github.com/etch2025/binarystar_orbit_modeller)")
 
 # ----------------------------------------------------------------------
 # Sidebar
@@ -252,9 +252,9 @@ with st.sidebar:
     st.header("Mass constraint (optional)")
     st.checkbox("Constrain by spectroscopic total mass", key="use_mass")
     _mass_off = not st.session_state["use_mass"]
-    st.number_input("m1 guess (Msun)", key="m1", min_value=0.0, step=0.01,
+    st.number_input("m1 guess (MSun)", key="m1", min_value=0.0, step=0.01,
                     disabled=_mass_off)
-    st.number_input("m2 guess (Msun)", key="m2", min_value=0.0, step=0.01,
+    st.number_input("m2 guess (MSun)", key="m2", min_value=0.0, step=0.01,
                     disabled=_mass_off)
     st.slider("Mass tolerance (fractional)", 0.01, 0.5,
               key="m_total_frac_accept", disabled=_mass_off)
@@ -298,7 +298,7 @@ if raw is None:
         st.dataframe(
             pd.DataFrame([
                 {"System": k, "Components": v["spectral"], "File": v["file"],
-                 "m1 (Msun)": v["m1"], "m2 (Msun)": v["m2"],
+                 "m1 (MSun)": v["m1"], "m2 (MSun)": v["m2"],
                  "Period search (yr)": f"{v['P_lower']:g} - {v['P_upper']:g}"}
                 for k, v in EXAMPLES.items()
             ]).set_index("System"),
@@ -422,19 +422,19 @@ if result is not None:
 
     col_a, col_b, col_c = st.columns(3)
     with col_a:
-        st.subheader("Cost vs period")
+        st.subheader("Period Residuals")
         st.pyplot(result.period_fig)
     with col_b:
-        st.subheader("Cost vs semi-major axis")
+        st.subheader("Semi-Major Axis Residuals")
         st.pyplot(result.sma_fig)
     with col_c:
-        st.subheader("Cost vs eccentricity")
+        st.subheader("Eccentricity Residuals")
         st.pyplot(result.eccent_fig)
 
     if result.ranges:
-        st.subheader("Accepted-family element ranges")
-        st.caption("Indicative spread across all accepted orbits, not a formal "
-                   "error bar (residuals are unweighted).")
+        st.subheader("Range of Acceptable Orbital Elements")
+        # st.caption("Indicative spread across all accepted orbits, not a formal "
+        #            "error bar (residuals are unweighted).")
         st.dataframe(
             pd.DataFrame(
                 [(k, v[0], v[2], v[1]) for k, v in result.ranges.items()],

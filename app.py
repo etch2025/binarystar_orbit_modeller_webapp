@@ -5,6 +5,7 @@ Run locally with:   streamlit run app.py
 """
 import hashlib
 import io
+import zipfile
 from urllib.parse import quote_plus
 import os
 
@@ -82,8 +83,6 @@ DEFAULTS = {
     "m1": 0.70,
     "m2": 0.64,
     "m_total_frac_accept": 0.25,
-    "use_seed": True,
-    "seed": 42,
     "data_choice": "61 Cygni (HD 201091)",
 }
 
@@ -118,9 +117,11 @@ PARAM_SPEC = {
     "m1":                  (float, "m1"),
     "m2":                  (float, "m2"),
     "m_total_frac_accept": (float, "mtol"),
-    "use_seed":            (_as_bool, "useseed"),
-    "seed":                (int, "seed"),
 }
+
+# Fixed internal seed, used for every fit so results stay reproducible
+# without exposing a seed control in the UI.
+FIT_SEED = 42
 
 
 def _hydrate_from_url():
@@ -258,11 +259,6 @@ with st.sidebar:
     st.slider("Mass tolerance (fractional)", 0.01, 0.5,
               key="m_total_frac_accept", disabled=_mass_off)
 
-    st.header("Reproducibility")
-    st.checkbox("Fix random seed", key="use_seed")
-    st.number_input("Seed", key="seed", step=1,
-                    disabled=not st.session_state["use_seed"])
-
     if st.session_state["data_choice"] in EXAMPLES:
         if st.button("Reset to recommended settings", use_container_width=True):
             apply_preset(st.session_state["data_choice"])
@@ -344,7 +340,6 @@ def _settings_signature():
         st.session_state["P_grid_log"], st.session_state["accept_factor"],
         st.session_state["use_mass"], st.session_state["m1"],
         st.session_state["m2"], st.session_state["m_total_frac_accept"],
-        st.session_state["use_seed"], int(st.session_state["seed"]),
     )
 
 
@@ -374,7 +369,7 @@ if run:
             P_grid_log=st.session_state["P_grid_log"],
             accept_factor=st.session_state["accept_factor"],
             m_total_frac_accept=st.session_state["m_total_frac_accept"],
-            seed=int(st.session_state["seed"]) if st.session_state["use_seed"] else None,
+            seed=FIT_SEED,
             progress=lambda f: bar.progress(
                 f, text=f"Fitting orbits... {f * 100:.0f}%"),
         )
@@ -389,8 +384,6 @@ if run:
     st.session_state["result"] = result
     st.session_state["fit_meta"] = {
         "target": st.session_state["target"],
-        "use_seed": st.session_state["use_seed"],
-        "seed": int(st.session_state["seed"]),
         "data_choice": st.session_state["data_choice"],
         "source_label": source_label,
         "n_restarts_per_P": int(st.session_state["n_restarts_per_P"]),
@@ -411,8 +404,7 @@ if result is not None:
                 "below are from the previous run - click **Fit orbit** to "
                 "recompute with the new settings.")
 
-    st.caption(f"Showing fit for **{meta.get('source_label', 'data')}**"
-               + (f" (seed {meta['seed']})" if meta.get("use_seed") else ""))
+    st.caption(f"Showing fit for **{meta.get('source_label', 'data')}**")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Accepted / total", f"{result.n_accept} / {result.n_total}")
@@ -452,10 +444,6 @@ if result is not None:
         )
 
     st.subheader("Share this model")
-    if not meta.get("use_seed", True):
-        st.warning("The random seed was not fixed for this fit, so this link "
-                   "reproduces the settings but not necessarily the identical "
-                   "fit. Enable 'Fix random seed' for a reproducible permalink.")
     if meta.get("data_choice") == UPLOAD_CHOICE:
         st.info("This link carries the fit settings, but an uploaded CSV "
                 "cannot be embedded in a URL — the recipient will need to "
@@ -466,19 +454,35 @@ if result is not None:
 
     st.subheader("Downloads")
     tag = meta.get("target", "orbit").replace(" ", "_")
-    d1, d2, d3 = st.columns(3)
+    d1, d2, d3, d4 = st.columns(4)
     png = io.BytesIO()
     result.orbit_fig.savefig(png, format="png", dpi=200, bbox_inches="tight")
     d1.download_button("Best-fit orbit (PNG)", png.getvalue(),
                        file_name=f"orbit_fit_{tag}.png", mime="image/png")
+
+    # Bundle the three cost-diagnostic plots (period, semi-major axis,
+    # eccentricity) into a single zip for one-click download.
+    cost_plots = {
+        f"cost_vs_period_{tag}.png": result.period_fig,
+        f"cost_vs_sma_{tag}.png": result.sma_fig,
+        f"cost_vs_eccentricity_{tag}.png": result.eccent_fig,
+    }
+    cost_zip = io.BytesIO()
+    with zipfile.ZipFile(cost_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fname, fig in cost_plots.items():
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
+            zf.writestr(fname, buf.getvalue())
+    d2.download_button("All cost plots (ZIP)", cost_zip.getvalue(),
+                       file_name=f"cost_plots_{tag}.zip", mime="application/zip")
 
     all_csv = pd.DataFrame(
         result.fitted_values,
         columns=["P", "T", "e", "a_arcsec", "i_deg", "Omega_deg",
                  "omega_deg", "M_total", "cost", "R2"],
     ).to_csv(index=False)
-    d2.download_button("All fits (CSV)", all_csv,
+    d3.download_button("All fits (CSV)", all_csv,
                        file_name=f"all_fits_{tag}.csv", mime="text/csv")
 
-    d3.download_button("Run log (TXT)", result.log_text,
+    d4.download_button("Run log (TXT)", result.log_text,
                        file_name=f"logfile_{tag}.txt", mime="text/plain")

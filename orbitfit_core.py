@@ -33,6 +33,7 @@ class FitResult:
     best_accept_fit: np.ndarray          # lowest-cost row within `accept`
     orbit_fig: "plt.Figure"              # sky + true orbit panels of best_accept_fit
     period_fig: "plt.Figure"             # cost vs period
+    sma_fig: "plt.Figure"                # cost vs semi-major axis
     eccent_fig: "plt.Figure"             # cost vs eccentricity
     log_text: str                        # human-readable run log
     ranges: dict                         # {label: (min, max, median)} over accept
@@ -415,6 +416,13 @@ def run_fit(source, *, target="Target", m1_guess=None, m2_guess=None,
         f"Best Period = {best_accept_fit[0]} yr", ttl,
         accept_factor, P_grid_log)
 
+    sma_fig = _cost_scatter(
+        fitted_values[:, 3], accept[:, 3],
+        fitted_values[:, 8], accept[:, 8],
+        best_accept_fit[3], thresh, f"Semi-Major Axis ({unit})",
+        f"Best Semi-Major Axis = {best_accept_fit[3]}{unit}", ttl,
+        accept_factor, P_grid_log)
+
     eccent_fig = _cost_scatter(
         fitted_values[:, 2], accept[:, 2],
         fitted_values[:, 8], accept[:, 8],
@@ -429,7 +437,7 @@ def run_fit(source, *, target="Target", m1_guess=None, m2_guess=None,
     return FitResult(
         fitted_values=fitted_values, accept=accept, best_fit=best_fit,
         best_accept_fit=best_accept_fit, orbit_fig=orbit_fig,
-        period_fig=period_fig, eccent_fig=eccent_fig,
+        period_fig=period_fig, sma_fig=sma_fig, eccent_fig=eccent_fig,
         log_text="\n".join(log), ranges=ranges, d_pc=d_pc,
         parallax_mas=parallax_mas, n_accept=len(accept),
         n_total=len(fitted_values))

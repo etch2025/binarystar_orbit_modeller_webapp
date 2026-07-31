@@ -3,6 +3,7 @@ Streamlit front-end for the visual-binary orbit fitter.
 
 Run locally with:   streamlit run app.py
 """
+import hashlib
 import io
 from urllib.parse import quote_plus
 import os
@@ -324,7 +325,26 @@ except Exception:
     st.warning("Could not preview the CSV, but the fitter will still try "
                "to read it.")
 
+def _settings_signature():
+    """Identity of the model the current sidebar settings would produce."""
+    return (
+        hashlib.md5(raw).hexdigest(),
+        st.session_state["data_choice"], st.session_state["target"],
+        st.session_state["P_lower"], st.session_state["P_upper"],
+        int(st.session_state["n_P_grid"]),
+        int(st.session_state["n_restarts_per_P"]),
+        st.session_state["P_grid_log"], st.session_state["accept_factor"],
+        st.session_state["use_mass"], st.session_state["m1"],
+        st.session_state["m2"], st.session_state["m_total_frac_accept"],
+        st.session_state["use_seed"], int(st.session_state["seed"]),
+    )
+
+
 if run:
+    # Clicking "Fit orbit" resets everything and recomputes from scratch.
+    st.session_state["result"] = None
+    st.session_state["fit_meta"] = None
+
     # Mirror the exact settings of this model into the URL before fitting,
     # so the address bar is a permalink to what is being computed.
     _write_url()
@@ -352,6 +372,36 @@ if run:
         st.stop()
     bar.empty()
 
+    # Persist the result together with a snapshot of the settings that
+    # produced it, so later sidebar edits cannot mislabel these outputs.
+    st.session_state["result"] = result
+    st.session_state["fit_meta"] = {
+        "target": st.session_state["target"],
+        "use_seed": st.session_state["use_seed"],
+        "seed": int(st.session_state["seed"]),
+        "data_choice": st.session_state["data_choice"],
+        "source_label": source_label,
+        "n_restarts_per_P": int(st.session_state["n_restarts_per_P"]),
+        "signature": _settings_signature(),
+        "share_url": _share_url(),
+    }
+
+# ----------------------------------------------------------------------
+# Render from session_state, so changing a setting does NOT discard the
+# fits, plots, or element ranges. Only the "Fit orbit" button recomputes.
+# ----------------------------------------------------------------------
+result = st.session_state.get("result")
+meta = st.session_state.get("fit_meta") or {}
+
+if result is not None:
+    if meta.get("signature") and meta["signature"] != _settings_signature():
+        st.info("Sidebar settings have changed since this fit. The results "
+                "below are from the previous run - click **Fit orbit** to "
+                "recompute with the new settings.")
+
+    st.caption(f"Showing fit for **{meta.get('source_label', 'data')}**"
+               + (f" (seed {meta['seed']})" if meta.get("use_seed") else ""))
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Accepted / total", f"{result.n_accept} / {result.n_total}")
     c2.metric("Distance (pc)", f"{result.d_pc:.2f}")
@@ -366,11 +416,14 @@ if run:
     st.subheader("Best-fit orbit")
     st.pyplot(result.orbit_fig)
 
-    col_a, col_b = st.columns(2)
+    col_a, col_b, col_c = st.columns(3)
     with col_a:
         st.subheader("Cost vs period")
         st.pyplot(result.period_fig)
     with col_b:
+        st.subheader("Cost vs semi-major axis")
+        st.pyplot(result.sma_fig)
+    with col_c:
         st.subheader("Cost vs eccentricity")
         st.pyplot(result.eccent_fig)
 
@@ -387,21 +440,20 @@ if run:
         )
 
     st.subheader("Share this model")
-    if not st.session_state["use_seed"]:
-        st.warning("The random seed is not fixed, so this link reproduces the "
-                   "settings but not necessarily the identical fit. Enable "
-                   "'Fix random seed' for a reproducible permalink.")
-    if choice == UPLOAD_CHOICE:
+    if not meta.get("use_seed", True):
+        st.warning("The random seed was not fixed for this fit, so this link "
+                   "reproduces the settings but not necessarily the identical "
+                   "fit. Enable 'Fix random seed' for a reproducible permalink.")
+    if meta.get("data_choice") == UPLOAD_CHOICE:
         st.info("This link carries the fit settings, but an uploaded CSV "
                 "cannot be embedded in a URL — the recipient will need to "
                 "upload the same file. Links to the bundled example datasets "
                 "are fully self-contained.")
-    st.caption("The address bar is already updated. Copy the link below to "
-               "share or bookmark this exact model.")
-    st.code(_share_url(), language=None)
+    st.caption("This link points to the fit shown above.")
+    st.code(meta.get("share_url") or _share_url(), language=None)
 
     st.subheader("Downloads")
-    tag = st.session_state["target"].replace(" ", "_")
+    tag = meta.get("target", "orbit").replace(" ", "_")
     d1, d2, d3 = st.columns(3)
     png = io.BytesIO()
     result.orbit_fig.savefig(png, format="png", dpi=200, bbox_inches="tight")

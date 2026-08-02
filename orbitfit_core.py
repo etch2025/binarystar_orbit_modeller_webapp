@@ -137,7 +137,7 @@ def _bounds(P_lower, P_upper):
 
 
 def fit_six_at_fixed_P(P_fixed, n_restarts, rng, t_obs, x_obs, y_obs,
-                       lower, upper):
+                       lower, upper, on_restart=None):
     """Fit the six non-period elements with P pinned by a razor-thin bound."""
     eps = max(P_fixed * 1e-9, 1e-9)
     lo = [P_fixed - eps] + lower[1:]
@@ -158,10 +158,12 @@ def fit_six_at_fixed_P(P_fixed, n_restarts, rng, t_obs, x_obs, y_obs,
             sol = least_squares(residuals, p0, args=(t_obs, x_obs, y_obs),
                                 bounds=(lo, hi), method="trf",
                                 x_scale="jac", max_nfev=2000)
+            if local_best is None or sol.cost < local_best.cost:
+                local_best = sol
         except Exception:
-            continue
-        if local_best is None or sol.cost < local_best.cost:
-            local_best = sol
+            pass
+        if on_restart is not None:
+            on_restart()
     return local_best
 
 
@@ -372,9 +374,21 @@ def run_fit(source, *, target="Target", m1_guess=None, m2_guess=None,
     ]
 
     fitted_values = []
+    total_steps = max(len(P_values) * n_restarts_per_P, 1)
+    done_steps = 0
+
+    def _tick_restart():
+        nonlocal done_steps
+        done_steps += 1
+        if progress is not None:
+            progress(done_steps / total_steps)
+
     for gi, P_fixed in enumerate(P_values):
-        sol = fit_six_at_fixed_P(P_fixed, n_restarts_per_P, rng,
-                                 t_obs, x_obs, y_obs, lower, upper)
+        sol = fit_six_at_fixed_P(
+            P_fixed, n_restarts_per_P, rng,
+            t_obs, x_obs, y_obs, lower, upper,
+            on_restart=_tick_restart if progress is not None else None,
+        )
         if sol is not None:
             row = record(sol, t_obs, x_obs, y_obs, d_pc, ss_tot)
             fitted_values.append(row)
@@ -382,8 +396,6 @@ def run_fit(source, *, target="Target", m1_guess=None, m2_guess=None,
             log.append(f"  [{gi+1}/{n_P_grid}] P = {P_fixed:8.2f} yr, "
                        f"a = {row[3]:.3f}\"  e = {row[2]:.3f}, "
                        f"M = {row[7]:.3f} Msun  cost = {row[8]}")
-        if progress is not None:
-            progress((gi + 1) / len(P_values))
 
     if not fitted_values:
         raise RuntimeError("No successful fits — check data and bounds.")

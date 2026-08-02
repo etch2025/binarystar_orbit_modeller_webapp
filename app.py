@@ -373,7 +373,7 @@ if run:
             m_total_frac_accept=st.session_state["m_total_frac_accept"],
             seed=FIT_SEED,
             progress=lambda f: bar.progress(
-                f, text=f"Fitting orbits... {f * 100:.0f}%"),
+                f, text=f"Fitting orbits... {f * 100:.3f}%"),
         )
     except Exception as exc:
         bar.empty()

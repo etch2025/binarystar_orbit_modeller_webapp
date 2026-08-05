@@ -200,8 +200,9 @@ def _on_data_choice_change():
 
 st.set_page_config(page_title="Binary Star Orbit Modeller", layout="wide")
 st.title("Binary Star Orbit Modeller")
-st.caption("Orbit Fitter for binary stars by iterating over the Thiele-Innes Method.")
+st.caption("Orbit Fitter for binary stars by iterating over the Thiele-Innes Method powered by Matplotlib, NumPy, and SciPy")
 st.markdown("[Version of the Orbit Modeller than can be run locally and much faster](https://github.com/etch2025/binarystar_orbit_modeller)")
+st.subheader("Created by [Ethan Chen](https://www.chenastronomy.com/)", divider="gray")
 
 # ----------------------------------------------------------------------
 # Sidebar
